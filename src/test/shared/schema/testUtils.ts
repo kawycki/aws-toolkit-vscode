@@ -4,8 +4,13 @@
  */
 
 import * as assert from 'assert'
+import got from 'got'
 import * as path from 'path'
+import * as vscode from 'vscode'
+import { writeFile } from 'fs-extra'
 import { GitExtension } from '../../../shared/extensions/git'
+import { cfnSchemaUri, samSchemaUri, buildSpecSchemaUri, buildspecCloudfrontURL } from '../../../shared/schemas'
+import { getLogger } from '../../../shared/logger'
 
 export type JSONValue = string | boolean | number | null | JSONValue[] | JSONObject
 
@@ -16,9 +21,10 @@ export interface JSONObject {
 export interface TestSchemas {
     samSchema: JSONObject
     cfnSchema: JSONObject
+    buildSpecSchema: JSONObject
 }
 
-export async function getCITestSchemas(): Promise<TestSchemas> {
+async function downloadCITestSchemas() {
     const fetchUrl = 'https://github.com/awslabs/goformation'
     const repo = await GitExtension.instance.listAllRemoteFiles({
         fetchUrl,
@@ -40,11 +46,34 @@ export async function getCITestSchemas(): Promise<TestSchemas> {
 
     repo.dispose()
 
-    const samSchema = JSON.parse(samSchemaFile)
-    const cfnSchema = JSON.parse(cfnSchemaFile)
+    const buildSpecSchemaFile = await got.get(buildspecCloudfrontURL).text()
+
+    return {
+        cfnSchemaFile,
+        samSchemaFile,
+        buildSpecSchemaFile,
+    }
+}
+
+export async function writeTestSchemas(storageLocation: vscode.Uri): Promise<void> {
+    const files = await downloadCITestSchemas()
+    await writeFile(cfnSchemaUri(storageLocation).fsPath, files.cfnSchemaFile)
+    getLogger().info(`Wrote cfn schema to ${cfnSchemaUri(storageLocation).fsPath}`)
+    await writeFile(samSchemaUri(storageLocation).fsPath, files.samSchemaFile)
+    getLogger().info(`Wrote sam schema to ${samSchemaUri(storageLocation).fsPath}`)
+    await writeFile(buildSpecSchemaUri(storageLocation).fsPath, files.buildSpecSchemaFile)
+    getLogger().info(`Wrote buildspec schema to ${buildSpecSchemaUri(storageLocation).fsPath}`)
+}
+
+export async function getCITestSchemas(): Promise<TestSchemas> {
+    const schemas = await downloadCITestSchemas()
+    const samSchema = JSON.parse(schemas.samSchemaFile)
+    const cfnSchema = JSON.parse(schemas.cfnSchemaFile)
+    const buildSpecSchema = JSON.parse(schemas.buildSpecSchemaFile)
     return {
         samSchema,
         cfnSchema,
+        buildSpecSchema,
     }
 }
 
