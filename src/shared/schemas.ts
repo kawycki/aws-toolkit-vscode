@@ -169,6 +169,7 @@ export class SchemaService {
  * @param extensionContext VSCode extension context
  */
 export async function getDefaultSchemas(extensionContext: vscode.ExtensionContext): Promise<Schemas | undefined> {
+    getLogger().info('Extension global storage uri is currently: ' + extensionContext.globalStorageUri.fsPath)
     const cfnSchemaLocation = cfnSchemaUri(extensionContext.globalStorageUri)
     const samSchemaLocation = samSchemaUri(extensionContext.globalStorageUri)
     const buildSpecSchemaLocation = buildSpecSchemaUri(extensionContext.globalStorageUri)

@@ -56,6 +56,7 @@ async function downloadCITestSchemas() {
 }
 
 export async function writeTestSchemas(storageLocation: vscode.Uri): Promise<void> {
+    getLogger().info('Schema storage location is currently: ' + storageLocation.fsPath)
     const files = await downloadCITestSchemas()
     await writeFile(cfnSchemaUri(storageLocation).fsPath, files.cfnSchemaFile)
     getLogger().info(`Wrote cfn schema to ${cfnSchemaUri(storageLocation).fsPath}`)
