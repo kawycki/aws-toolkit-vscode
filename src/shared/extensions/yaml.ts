@@ -32,28 +32,67 @@ function evaluate(schema: vscode.Uri | (() => vscode.Uri)): vscode.Uri {
 }
 
 export interface YamlExtension {
-    assignSchema(path: vscode.Uri, schema: vscode.Uri | (() => vscode.Uri)): void
-    removeSchema(path: vscode.Uri): void
-    getSchema(path: vscode.Uri): vscode.Uri | undefined
+    assignSchema(path: string, registry: string | undefined, schema: vscode.Uri | (() => vscode.Uri)): void
+    removeSchema(path: string, registry: string | undefined): void
+    getSchema(path: string): string | undefined
+}
+
+function registerSchema(
+    path: string,
+    registry: string | undefined,
+    schema: vscode.Uri | (() => vscode.Uri),
+    schemaMap: Map<string, Map<string, vscode.Uri>>
+) {
+    if (!registry) {
+        return
+    }
+    const schemas = schemaMap.get(path)
+    if (!schemas) {
+        schemaMap.set(path, new Map())
+    }
+    schemaMap.set(path, schemaMap.get(path)!.set(registry, applyScheme(AWS_SCHEME, evaluate(schema))))
+}
+
+function deRegisterSchema(path: string, registry: string | undefined, schemaMap: Map<string, Map<string, vscode.Uri>>) {
+    if (!registry) {
+        return
+    }
+    const schemas = schemaMap.get(path)
+    if (!schemas) {
+        return
+    }
+    schemas.delete(registry)
+}
+
+function getSchemas(path: string, schemaMap: Map<string, Map<string, vscode.Uri>>): string | undefined {
+    const schema = schemaMap.get(path)
+    if (!schema) {
+        return undefined
+    }
+    const possibleSchemas = Array.from(schema.values()).filter(schema => schema !== undefined)
+    if (possibleSchemas.length > 0) {
+        return possibleSchemas[0].toString()
+    }
+    return undefined
 }
 
 export async function activateYamlExtension(): Promise<YamlExtension | undefined> {
-    const schemaMap = new Map<string, vscode.Uri>()
+    const schemaMap = new Map<string, Map<string, vscode.Uri>>()
 
     if (isCloud9()) {
         // Until Cloud 9 supports VSCode-YAML out of the box, start the yaml-language-service
         // inside of the toolkit so that users can still have cfn/sam support
         const languageService = await activateYAMLLanguageService()
         return {
-            assignSchema: async (path, schema) => {
-                schemaMap.set(path.toString(), evaluate(schema))
+            assignSchema: (path, registry, schema) => {
+                registerSchema(path, registry, schema, schemaMap)
                 configureLanguageService(languageService, schemaMap)
             },
-            removeSchema: path => {
-                schemaMap.delete(path.toString())
+            removeSchema: (path, registry) => {
+                deRegisterSchema(path, registry, schemaMap)
                 configureLanguageService(languageService, schemaMap)
             },
-            getSchema: path => schemaMap.get(path.toString()),
+            getSchema: path => getSchemas(path, schemaMap),
         }
     }
 
@@ -64,7 +103,7 @@ export async function activateYamlExtension(): Promise<YamlExtension | undefined
     yamlExt.exports.registerContributor(
         AWS_SCHEME,
         resource => {
-            return schemaMap.get(resource)?.toString()
+            return getSchemas(resource, schemaMap)
         },
         uri => {
             try {
@@ -76,8 +115,10 @@ export async function activateYamlExtension(): Promise<YamlExtension | undefined
         }
     )
     return {
-        assignSchema: (path, schema) => schemaMap.set(path.toString(), applyScheme(AWS_SCHEME, evaluate(schema))),
-        removeSchema: path => schemaMap.delete(path.toString()),
-        getSchema: path => schemaMap.get(path.toString()),
+        assignSchema: (path, registry, schema) => {
+            registerSchema(path, registry, schema, schemaMap)
+        },
+        removeSchema: (path, registry) => deRegisterSchema(path, registry, schemaMap),
+        getSchema: path => getSchemas(path, schemaMap),
     }
 }
